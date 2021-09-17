@@ -15,3 +15,6 @@ This material summarizes the files contained in this folder:
 7. runner.edp is an edp file for running all problems, this includes solving for the stationary optimization problem, and the time-dependent problem up to T=512.
 
 8. data folder contains the data points of the boundary and the objective function values.
+
+
+**Note: the plot commands in the codes are commented so that the runner.edp file will run continuously without supervision**
