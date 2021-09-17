@@ -1,0 +1,25 @@
+/* John Sebastian SIMON (john.simon@stu.kanazawa-u.ac.jp) */
+/* Created: 2021 September 9 */
+/* EDP file responsible for mesh generation */
+
+
+mesh Th; // main mesh
+mesh Th2; // mesh for testing 
+mesh Thinit; // place holder for the initial mesh
+mesh ThD; // mesh for the objective function and where the desired field is defined
+mesh Ths; // mesh for saving the stationary solution
+mesh ThT; // mesh for saving the time-dependent solution
+
+/* Border labels */
+real gamma = 1;
+
+/* Border definition */
+border init(t = 0, 2*pi){x = 2*cos(t); y = 3*sin(t); label = gamma;} // border for the initial domain
+border des(t = 0, 2*pi){x = 2*cos(t); y = 2*sin(t); label = gamma;} // boder for the "desired" domain
+border dum(t = 0, 2*pi){x = cos(t); y = sin(t);} // boreder for the dummer mesh for the desired field ud
+
+/* Mesh definition */
+Thinit = buildmesh(init(100)); //building mesh for the initial 
+Th = buildmesh(des(100)); // building this mesh as a placeholder for solving the desired field, this will be overwritten once the desired field is computed
+ThD = buildmesh(dum(100)); // building the dummy mesh for the indicator function
+

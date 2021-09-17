@@ -1,0 +1,31 @@
+/* John Sebastian SIMON (john.simon@stu.kanazawa-u.ac.jp) */
+/* Created: 2021 September 9 */
+/* EDP file responsible for macro definitions */
+
+
+/* Dynamics Macros */
+
+macro GRAD(u,v) [dx(u), dy(u), dx(v), dy(v)] //EOM 
+macro div(u,v) (dx(u)+dy(v)) // EOM
+macro UgradV(u1,u2,v1,v2) [ [u1,u2]'*[dx(v1),dy(v1)] , [u1,u2]'*[dx(v2),dy(v2)] ]// EOM
+macro tr(M) M' //EOM /*'*/
+macro GRN(u, v) [dx(u)*N.x + dy(u)*N.y, dx(v)*N.x + dy(v)*N.y] // EOM
+macro dotN(u1,u2) (u1*N.x+u2*N.y) //EOM
+
+/* Optimization Macros*/
+macro J(Th) ( int2d(Th)( chi(ThD)(x,y)*( (ux-udx)*(ux-udx) + (uy-udy)*(uy-udy) ) ) ) // EOM
+macro dJ()	( nu*tr(GRN(ux,uy))*GRN(wx,wy) + chi(ThD)(x,y)*( (ux-udx)*(ux-udx) + (uy-udy)*(uy-udy) ) ) // EOM
+
+real Jt;
+macro JT(Th) {
+	Jt = (0.5)*int2d(Th)( chi(ThD)(x,y)*( (sx[0]-udx)*(sx[0]-udx) + (sy[0]-udy)*(sy[0]-udy) ) + 
+												chi(Th2)(x,y)*( (sx[m]-udx)*(sx[m]-udx) + (sy[m]-udy)*(sy[m]-udy) ));
+	for(int n=1;n<m;n++){
+		Jt += int2d(Th)( chi(ThD)(x,y)*( (sx[n]-udx)*(sx[n]-udx) + (sy[n]-udy)*(sy[n]-udy) ) ) ;
+		cout << "Objective Function JT = "<< Jt << endl;
+	}
+	Jt *= 1./m;
+	
+}  // EOM
+
+macro dJT(n) ( nu*tr(GRN(sx[n],sy[n]))*GRN(zx[n],zy[n]) + chi(Th2)(x,y)*( (sx[n]-udx)*(sx[n]-udx) + (sy[n]-udy)*(sy[n]-udy) ) )	 // EOM

@@ -1,0 +1,212 @@
+/* John Sebastian SIMON (john.simon@stu.kanazawa-u.ac.jp) */
+/* Created: 2021 September 9 */
+/* EDP file responsible for state solvers */
+
+include "meshes.edp"
+include "macros.edp"
+include "getARGV.idp"
+
+/* Finite Elements */
+
+fespace Vh(Th,P2); // P2 finite element space
+fespace Ph(Th,P1); // P1 finite element space
+
+
+Vh ux, uy; // velocity solution finite elements
+Vh dux, duy; // delta velocity finite elements for Newton
+Vh up1, up2; // previous velocity solution finite elements for the time dependent problem
+Vh p; // pressure solution finite element
+Vh dp; // delta pressure finite element for Newton
+Vh vx, vy; // velocity test finite elements
+Vh q; // pressure test finite element
+
+
+/* Misc Finite Elements */
+Vh f1 = (y)^3/10, f2 = -(x)^3/10; // State input functions 
+Vh g1, g2; // Adjoint input functions 
+Vh udx, udy; // Desired volecities
+Vh wx, wy; //  velocity adjoint finite elements
+Vh wp1, wp2; //  velocity adjoint finite elements for the time dependent problem
+Vh qq; //  pressure adjoint finite element
+
+/* Deformation Finite Elements */
+Vh dpx, dpy; // defomration field
+Vh thx, thy; // time-dependent deformation field
+
+
+
+/* Stationary problems */
+
+real nu = 1./5; // viscosity constant, disc: initially assumed as 1/5 for the desired velocity, but changed to 1 later on
+real artdiv = 1e-6; //  parameter for the artificial divergence
+real arrns = 1e-6; //  error treshold for the Newton's method
+
+macro stokesmac(Th){
+	solve stokes([ux,uy,p],[vx,vy,q], solver=UMFPACK) = 
+  		int2d(Th)(nu*(tr(GRAD(ux,uy))*GRAD(vx,vy))-p*div(vx,vy))
+  		- int2d(Th)(q*div(ux,uy))
+  		+ int2d(Th)(p*q*artdiv)
+        - int2d(Th)(f1*vx + f2*vy)
+  		+ on(gamma, ux = 0, uy = 0);
+
+} //EOM 
+
+stokesmac(Th);
+
+udx = chi(ThD)(x,y)*(ux); udy = chi(ThD)(x,y)*(uy); // Defining the desired function on the dummy domain 
+
+nu = 1./1; // since the desired velocity is solved, we now change the value of nu
+
+macro navstokes(Th){
+	/* Initialize Stokes Equations */
+	stokesmac(Th);
+	/*plot([ux,uy], cmm = "Stokes Solution", wait = 0);*/
+	real err = 0;
+	int maxNSit = 5;
+	for(int n = 0; n < maxNSit; n++){
+		solve Oseen([dux, duy, dp],[vx, vy, q], solver = UMFPACK) = 
+			int2d(Th)(	nu*tr(GRAD(dux,duy))*GRAD(vx,vy)
+						+ tr(UgradV(dux,duy,ux,uy))*[vx,vy]
+						+ tr(UgradV(ux,uy,dux,duy))*[vx,vy]
+						- div(dux,duy)*q - div(vx,vy)*dp + dp*q*artdiv )
+			+ int2d(Th)( nu*tr(GRAD(ux,uy))*GRAD(vx,vy)
+						+ tr(UgradV(ux,uy,ux,uy))*[vx,vy]
+						- div(ux,uy)*q - div(vx,vy)*p + p*q*artdiv )
+			- int2d(Th)( tr([f1,f2])*[vx,vy])
+			+ on(gamma, dux = 0, duy = 0 );
+	ux[] += dux[];
+	uy[] += duy[];
+	p[] += dp[];
+	/*plot([ux,uy], cmm = "Newton Iterate "+n);*/
+	err = sqrt(int2d(Th)(tr(GRAD(dux,duy))*GRAD(dux,duy)+tr([dux,duy])*[dux,duy])/int2d(Th)(tr(GRAD(ux,uy))*GRAD(ux,uy)+tr([ux,uy])*[ux,uy]));
+    if(err<arrns){ 
+    	cout << "Newton Iterate accepted " << endl;
+    	break;}
+	}
+
+} //EOM
+
+
+macro adjointmac(Th){
+
+	g1 = 2*chi(ThD)(x,y)*(ux - udx);
+	g2 = 2*chi(ThD)(x,y)*(uy - udy);
+	solve Adjoint([wx,wy,qq],[vx,vy,q], solver = UMFPACK) = 
+      int2d(Th)(nu*tr(GRAD(wx,wy))*GRAD(vx,vy)
+          + tr(UgradV(vx,vy, ux, uy))*[wx,wy]
+          + tr(UgradV(ux,uy,vx,vy))*[wx,wy]
+          - div(wx,wy)*q - div(vx,vy)*qq
+          + 1.e-10*q*qq)
+      -int2d(Th)( tr([g1,g2])*[vx,vy] )
+      +on(gamma, wx=0,wy=0);
+
+
+
+} // EOF
+
+
+macro regulbord(Th){
+		cout << "Implementing Def" << endl;
+  		solve regb([dpx, dpy],[vx, vy]) =
+    		int2d(Th)( 0.05*tr(GRAD(dpx, dpy))*GRAD(vx,vy) + dpx*vx + dpy*vy )
+    		+int1d(Th,gamma)( dJ*dotN(vx,vy))
+    		;
+} //EOM
+
+
+
+/* Time Dependent Solvers */
+
+real T = getARGV("--time", 1);
+real dt = 0.2;
+real m = T/dt;
+real alpha = 1/dt;
+
+problem NS([ux,uy,p],[vx,vy,q],solver=UMFPACK) =
+		int2d(Th)(alpha*(ux*vx+uy*vy)
+					+nu*(tr(GRAD(ux,uy))*GRAD(vx,vy))
+					-(div(vx,vy))*p-(div(ux,uy))*q
+					-p*q*1.e-10 )
+		-int2d(Th)( tr([f1,f2])*[vx,vy] )
+		-int2d(Th)(alpha*convect([up1,up2],-dt,up1)*vx
+				 + alpha*convect([up1,up2],-dt,up2)*vy)
+		+ on(gamma, ux=0,uy=0)
+		;
+
+
+
+problem ADJOINT([wx,wy,qq],[vx,vy,q],solver=UMFPACK) =
+		int2d(Th)(alpha*(wx*vx+wy*vy)
+					//+nu*(dx(u1)*dx(v1)+dy(u1)*dy(v1)+dx(u2)*dx(v2)+dy(u2)*dy(v2))
+					+nu*tr(GRAD(wx,wy))*GRAD(vx,vy)
+					-( div(vx,vy) )*qq-( div(wx,wy) )*q
+					-qq*q*1.e-10 + tr(UgradV(ux,uy,vx,vy))*[wx,wy] )
+		-int2d(Th)( tr([g1,g2])*[vx,vy] )
+		-int2d(Th)(alpha*convect([up1,up2],dt,wp1)*vx
+				 + alpha*convect([up1,up2],dt,wp2)*vy)
+		+ on(gamma, wx=0,wy=0)
+		;
+
+Vh[int] sx(m+1), sy(m+1), zx(m+1), zy(m+1),dptx(m+1),dpty(m+1);
+
+macro timeNS(Th){
+	up1 = 0; up2 = 0;
+	sx[0] = up1; sy[0] = up2;
+	/*plot([up1,up2], cmm = "State at t=0");*/
+	for(int n=1;n<=m;n++){
+	
+		NS;
+
+		up1 = ux; up2 = uy;
+		sx[n]=up1; sy[n]=up2;
+		/*plot([up1,up2], cmm = "State at t="+(dt*n) );*/
+	}
+} // EOM 
+
+
+macro timeADJOINT(Th){
+	wx = 0; wy = 0;
+	zx[m] = wx; zy[m] = wy;
+		for(int i=1; i<=m+1; i++){
+			int j = m+1-i;
+			wp1 = wx; wp2 = wy;
+		
+			g1 = 2*chi(ThD)(x,y)*(sx[j] - udx);
+			g2 = 2*chi(ThD)(x,y)*(sy[j] - udy);
+			cout << j << endl;
+			ADJOINT;
+			zx[j] = wx; zy[j] = wy;
+			/*plot([wx,wy], cmm = "Adjoint at t="+(dt*j));*/
+
+	}
+} //
+
+
+macro regulbordT(Th) {
+		thx = 0; thy = 0;
+		cout << "Implementing Def" << endl;
+		solve regb([dpx, dpy],[vx, vy]) =
+    		int2d(Th)( 0.05*tr(GRAD(dpx, dpy))*GRAD(vx,vy) + dpx*vx + dpy*vy )
+    		+int1d(Th,gamma)( dJT(0)*dotN(vx,vy))
+    		;
+    		thx[] = 0.5*dpx[]; thy[] = 0.5*dpy[];
+
+    	solve regb1([dpx, dpy],[vx, vy]) =
+    		int2d(Th)( 0.05*tr(GRAD(dpx, dpy))*GRAD(vx,vy) + dpx*vx + dpy*vy )
+    		+int1d(Th,gamma)( dJT(m)*dotN(vx,vy))
+    		;
+    		thx[] += 0.5*dpx[]; thy[] += 0.5*dpy[];
+
+
+
+		for(int n=1;n<=m;n++){
+			solve regb([dpx, dpy],[vx, vy]) =
+    		int2d(Th)( 0.05*tr(GRAD(dpx, dpy))*GRAD(vx,vy) + dpx*vx + dpy*vy )
+    		+int1d(Th,gamma)( dJT(n)*dotN(vx,vy))
+    		;
+    		thx[] += dpx[];
+    		thy[] += dpy[];
+    }
+    thx = (1/m)*thx; thy = (1/m)*thy;
+		
+} //EOM

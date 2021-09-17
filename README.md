@@ -1,5 +1,3 @@
-# NSShapeOptiLongTime
-
 This material summarizes the files contained in this folder:
 
 1. macros.edp contains all the macros (except the macros for solving the state solutions) used through out the optimization processes

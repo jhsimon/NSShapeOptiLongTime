@@ -1,0 +1,142 @@
+/* John Sebastian SIMON (john.simon@stu.kanazawa-u.ac.jp) */
+/* Created: 2021 September 9 */
+/* EDP file responsible for the time-dependent main optimization */
+
+include "state_solver.edp"
+
+system("mkdir -p data/value/instationary"); // making directory for objective function values
+system("mkdir -p data/boundary/instationary/time_T"+T); // making directory for boundary points
+
+
+ofstream objval("data/value/instationary/objectivevalue_T"+T+".txt");        // initialize text file for objective function
+objval.precision(16);
+
+
+/* Main Optimization Loop */
+int BoundaryElement; // boundary element holder for postprocessing
+real errmax = 1e-6, errob = 1+errmax;   // tolerance
+real tau;                 // step size
+real minarea0 = 1e-4, minarea;      // parameters for tolerance on mesh adaptation (to prevent degeneracy)
+int optraff = 1;            // boolean parameter for adaptation
+int kkmax = 30;             // maximum iteration of adaptations
+int optmax = 1000;             // maximum iteration of opti loops
+int adaptcount = 0;           // adaptation counter
+real obj0;                // initial value of objective function
+real obj;               // updated value of objective function
+real minref = 1./5;                      // minimum length for refinement
+real maxref = 1./5;                      // maximum length for refinement
+real coef = 1;           // multiplicant on the step size
+
+/* Initialize */
+Th = adaptmesh(Thinit, [ux,uy], hmin=minref, hmax=maxref);      // mesh refinement 
+// plot(Th, cmm = "Initial Mesh", wait = 0);		// mesh plot
+
+timeNS(Th);
+// plot([ux,uy], cmm = "Initial State Solution at the final time T="+T);
+
+
+int k, kk;
+for(k=0; (k<optmax) && (errob > errmax); k++){
+	Th2 = Th;                         // mesh for testing 
+	JT(Th);
+	obj0 = Jt;                    // obj0 denotes the place holder for the o.j.
+  objval << k << " " << obj0  << endl;         // data for objective function
+
+  ofstream prof("data/boundary/instationary/time_T"+T+"/domain"+k+".txt"); // for saving boundary points
+      int NbBoundaryElements1 = Th.nbe;
+      for (int j=0; (j < NbBoundaryElements1) ; j++){
+        for(int l = 0; l<2 ; l++){
+          BoundaryElement = Th.be(j);
+          prof << Th.be(j)[l].x << " " <<Th.be(j)[l].y  << endl;
+        } 
+      }
+    prof.flush;
+	
+	timeADJOINT(Th); 					// adjoint resolution
+	// plot([wx,wy], cmm = "Adjoint "+k+" at time T="+T, wait=0);
+
+	regulbordT(Th);                  // Solving Deformation field
+  	// plot([thx,thy], cmm="Deformation Field "+k, wait=0);
+
+  	tau = coef*obj0 /int1d(Th,gamma)(thx^2 + thy^2);
+
+  	/* Step Size Testing */
+    /*  This stage is responsible for checking if the step size is enough to ensure the decrease of the */      
+    /*  objective functional and to ensure there is no degeneracy on the mesh movement   */
+    for (kk = 0;kk < kkmax; kk++) {
+      cout << "movemesh tau = "<< tau << endl;
+      minarea = checkmovemesh(Th2, [x + tau*dpx, y + tau*dpy]);                     // test for degeneracy
+
+      if (minarea > minarea0 || adaptcount>=5) {
+        Th = movemesh(Th2, [x + tau*dpx, y + tau*dpy]);                         // If mean area is enough we accept the deformation
+      }
+      else{                                               // Else we do mesh refinements
+        cout << "*** ADAPTMESH *** minarea = " << minarea << " minarea0 = " << minarea0 << endl;
+        Th = adaptmesh(Th, [ux,uy], hmin=minref, hmax=maxref);
+        cout << " new minarea = " << minarea << endl;
+        minarea = checkmovemesh(Th, [x, y]);
+        adaptcount++;
+      }
+
+      if(adaptcount>=5) {                                       // we check if the number of adapatation 
+        cout << "Too many consecutive mesh adaptations. Giving up mesh adaptation" << endl;       // excedes the threshold
+          adaptcount = 0;
+      }
+
+
+      timeNS(Th);                                              // solve the state on the updated mesh
+      // plot([ux,uy], cmm = "Prospect Solution for iterate k="+(k+1));
+      JT(Th);
+      obj = Jt;                                            // obj denotes the updates on the objective function
+      tau *= 0.5;                                            // change value of step size
+      cout << "Objective Function New = " << obj << " / Old = " << obj0 << " (variation = " << ((obj-obj0)/obj) << "%)" << endl;
+      if (obj<obj0 || tau <= 1e-7){
+        break;
+      }
+
+
+
+    }
+
+    if (kk == kkmax || tau <= 1e-7) {
+      cout << "Warning : J_{n+1}>J_{n} (L0 = " << obj0 <<  ")" << endl;
+    }   
+
+    Th = adaptmesh(Th, [ux,uy], hmin=minref, hmax=maxref);      // mesh refinement 
+
+    errob = abs(obj - obj0)/obj;
+
+
+	
+
+
+}
+
+objval << k << " " << obj  << endl;         // data for objective function
+
+ofstream prof("data/boundary/instationary/time_T"+T+"/domain"+k+".txt"); // for saving boundary points
+      int NbBoundaryElements1 = Th.nbe;
+      for (int j=0; (j < NbBoundaryElements1) ; j++){
+        for(int l = 0; l<2 ; l++){
+          BoundaryElement = Th.be(j);
+          prof << Th.be(j)[l].x << " " <<Th.be(j)[l].y  << endl;
+        } 
+      }
+    prof.flush;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

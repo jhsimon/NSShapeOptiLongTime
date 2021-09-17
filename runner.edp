@@ -1,0 +1,8 @@
+
+
+system("FreeFem++ stationary_opti.edp");
+
+for(int k = 0; k < 10; k++){
+	real t = 2^k;
+	system("FreeFem++ instationary_opti.edp --time "+t);
+}
